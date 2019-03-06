@@ -17,214 +17,150 @@ import java.awt.Color;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import javax.swing.JSeparator;
+import java.awt.*;
+import javax.swing.*;
+import java.net.*;
+import java.io.*;
+import java.sql.Time;
 
 public class Sender extends JFrame {
 
-	private JPanel contentPane;
-	private JTextField ipTxtField;
-	private JLabel lblUdpReceive;
-	private JLabel lblUdpSend;
-	private JLabel lblFileName;
-	private JTextField txtEnterPort;
-	private JTextField txtEnterPort_1;
-	private JTextField txtEnterTransferFile;
-	private JLabel lblDatagramMaxSize;
-	private JTextField txtEnterMaxSize;
-	private JTextField textField;
-	private JLabel lblTotalTransmissionTime;
-	private JButton btnTransfer;
-	private JLabel lblTimeout;
-	private JTextField textField_1;
-	private JSeparator separator;
-	private JSeparator separator_1;
-	private JSeparator separator_2;
+    private JTextField IPAddress;
+    private JTextField ReceiverPort;
+    private JTextField SenderPort;
+    private JTextField FileName;
+    private JTextField MaxFileSize;
+    private JTextField Timeout;
+    private JTextField TotalTransmissionTime;
 
-	/**
-	 * Launch the application.
-	 */
-	public static void main(String[] args) {
-		EventQueue.invokeLater(new Runnable() {
-			public void run() {
-				try {
-					Sender frame = new Sender();
-					frame.setVisible(true);
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-		});
-	}
 
-	/**
-	 * Create the frame.
-	 */
-	public Sender() {
-		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		setBounds(100, 100, 577, 515);
-		contentPane = new JPanel();
-		contentPane.setBorder(new EmptyBorder(5, 5, 5, 5));
-		setContentPane(contentPane);
-		GridBagLayout gbl_contentPane = new GridBagLayout();
-		gbl_contentPane.columnWidths = new int[]{0, 0, 0};
-		gbl_contentPane.rowHeights = new int[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-		gbl_contentPane.columnWeights = new double[]{0.0, 1.0, Double.MIN_VALUE};
-		gbl_contentPane.rowWeights = new double[]{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Double.MIN_VALUE};
-		contentPane.setLayout(gbl_contentPane);
-		
-		JLabel ipLabel = new JLabel("IP Address");
-		GridBagConstraints gbc_ipLabel = new GridBagConstraints();
-		gbc_ipLabel.insets = new Insets(0, 0, 5, 5);
-		gbc_ipLabel.anchor = GridBagConstraints.WEST;
-		gbc_ipLabel.gridx = 0;
-		gbc_ipLabel.gridy = 1;
-		contentPane.add(ipLabel, gbc_ipLabel);
-		
-		ipTxtField = new JTextField();
-		ipTxtField.setText("Enter IP Address");
-		GridBagConstraints gbc_ipTxtField = new GridBagConstraints();
-		gbc_ipTxtField.fill = GridBagConstraints.HORIZONTAL;
-		gbc_ipTxtField.insets = new Insets(0, 0, 5, 0);
-		gbc_ipTxtField.gridx = 1;
-		gbc_ipTxtField.gridy = 1;
-		contentPane.add(ipTxtField, gbc_ipTxtField);
-		ipTxtField.setColumns(10);
-		
-		separator_2 = new JSeparator();
-		GridBagConstraints gbc_separator_2 = new GridBagConstraints();
-		gbc_separator_2.insets = new Insets(0, 0, 5, 5);
-		gbc_separator_2.gridx = 0;
-		gbc_separator_2.gridy = 2;
-		contentPane.add(separator_2, gbc_separator_2);
-		
-		lblUdpReceive = new JLabel("Receiver Port Number");
-		GridBagConstraints gbc_lblUdpReceive = new GridBagConstraints();
-		gbc_lblUdpReceive.anchor = GridBagConstraints.WEST;
-		gbc_lblUdpReceive.insets = new Insets(0, 0, 5, 5);
-		gbc_lblUdpReceive.gridx = 0;
-		gbc_lblUdpReceive.gridy = 3;
-		contentPane.add(lblUdpReceive, gbc_lblUdpReceive);
-		
-		txtEnterPort = new JTextField();
-		txtEnterPort.setText("Enter Port # of the Receiver");
-		GridBagConstraints gbc_txtEnterPort = new GridBagConstraints();
-		gbc_txtEnterPort.insets = new Insets(0, 0, 5, 0);
-		gbc_txtEnterPort.fill = GridBagConstraints.HORIZONTAL;
-		gbc_txtEnterPort.gridx = 1;
-		gbc_txtEnterPort.gridy = 3;
-		contentPane.add(txtEnterPort, gbc_txtEnterPort);
-		txtEnterPort.setColumns(10);
-		
-		lblUdpSend = new JLabel("Sender Port Number\r\n");
-		GridBagConstraints gbc_lblUdpSend = new GridBagConstraints();
-		gbc_lblUdpSend.anchor = GridBagConstraints.WEST;
-		gbc_lblUdpSend.insets = new Insets(0, 0, 5, 5);
-		gbc_lblUdpSend.gridx = 0;
-		gbc_lblUdpSend.gridy = 4;
-		contentPane.add(lblUdpSend, gbc_lblUdpSend);
-		
-		txtEnterPort_1 = new JTextField();
-		txtEnterPort_1.setText("Enter Port # of the Sender");
-		GridBagConstraints gbc_txtEnterPort_1 = new GridBagConstraints();
-		gbc_txtEnterPort_1.insets = new Insets(0, 0, 5, 0);
-		gbc_txtEnterPort_1.fill = GridBagConstraints.HORIZONTAL;
-		gbc_txtEnterPort_1.gridx = 1;
-		gbc_txtEnterPort_1.gridy = 4;
-		contentPane.add(txtEnterPort_1, gbc_txtEnterPort_1);
-		txtEnterPort_1.setColumns(10);
-		
-		lblFileName = new JLabel("File Name");
-		GridBagConstraints gbc_lblFileName = new GridBagConstraints();
-		gbc_lblFileName.anchor = GridBagConstraints.WEST;
-		gbc_lblFileName.insets = new Insets(0, 0, 5, 5);
-		gbc_lblFileName.gridx = 0;
-		gbc_lblFileName.gridy = 5;
-		contentPane.add(lblFileName, gbc_lblFileName);
-		
-		txtEnterTransferFile = new JTextField();
-		txtEnterTransferFile.setText("Enter Transfer File Name");
-		GridBagConstraints gbc_txtEnterTransferFile = new GridBagConstraints();
-		gbc_txtEnterTransferFile.insets = new Insets(0, 0, 5, 0);
-		gbc_txtEnterTransferFile.fill = GridBagConstraints.HORIZONTAL;
-		gbc_txtEnterTransferFile.gridx = 1;
-		gbc_txtEnterTransferFile.gridy = 5;
-		contentPane.add(txtEnterTransferFile, gbc_txtEnterTransferFile);
-		txtEnterTransferFile.setColumns(10);
-		
-		lblDatagramMaxSize = new JLabel("Datagram Max Size");
-		GridBagConstraints gbc_lblDatagramMaxSize = new GridBagConstraints();
-		gbc_lblDatagramMaxSize.anchor = GridBagConstraints.WEST;
-		gbc_lblDatagramMaxSize.insets = new Insets(0, 0, 5, 5);
-		gbc_lblDatagramMaxSize.gridx = 0;
-		gbc_lblDatagramMaxSize.gridy = 6;
-		contentPane.add(lblDatagramMaxSize, gbc_lblDatagramMaxSize);
-		
-		txtEnterMaxSize = new JTextField();
-		txtEnterMaxSize.setText("Enter Max Size of Datagram");
-		GridBagConstraints gbc_txtEnterMaxSize = new GridBagConstraints();
-		gbc_txtEnterMaxSize.insets = new Insets(0, 0, 5, 0);
-		gbc_txtEnterMaxSize.fill = GridBagConstraints.HORIZONTAL;
-		gbc_txtEnterMaxSize.gridx = 1;
-		gbc_txtEnterMaxSize.gridy = 6;
-		contentPane.add(txtEnterMaxSize, gbc_txtEnterMaxSize);
-		txtEnterMaxSize.setColumns(10);
-		
-		separator = new JSeparator();
-		GridBagConstraints gbc_separator = new GridBagConstraints();
-		gbc_separator.gridheight = 2;
-		gbc_separator.insets = new Insets(0, 0, 5, 5);
-		gbc_separator.gridx = 0;
-		gbc_separator.gridy = 7;
-		contentPane.add(separator, gbc_separator);
-		
-		separator_1 = new JSeparator();
-		GridBagConstraints gbc_separator_1 = new GridBagConstraints();
-		gbc_separator_1.insets = new Insets(0, 0, 5, 5);
-		gbc_separator_1.gridx = 0;
-		gbc_separator_1.gridy = 9;
-		contentPane.add(separator_1, gbc_separator_1);
-		
-		lblTimeout = new JLabel("Timeout");
-		GridBagConstraints gbc_lblTimeout = new GridBagConstraints();
-		gbc_lblTimeout.anchor = GridBagConstraints.WEST;
-		gbc_lblTimeout.insets = new Insets(0, 0, 5, 5);
-		gbc_lblTimeout.gridx = 0;
-		gbc_lblTimeout.gridy = 10;
-		contentPane.add(lblTimeout, gbc_lblTimeout);
-		
-		textField_1 = new JTextField();
-		GridBagConstraints gbc_textField_1 = new GridBagConstraints();
-		gbc_textField_1.insets = new Insets(0, 0, 5, 0);
-		gbc_textField_1.fill = GridBagConstraints.HORIZONTAL;
-		gbc_textField_1.gridx = 1;
-		gbc_textField_1.gridy = 10;
-		contentPane.add(textField_1, gbc_textField_1);
-		textField_1.setColumns(10);
-		
-		lblTotalTransmissionTime = new JLabel("Total Transmission Time");
-		GridBagConstraints gbc_lblTotalTransmissionTime = new GridBagConstraints();
-		gbc_lblTotalTransmissionTime.insets = new Insets(0, 0, 5, 5);
-		gbc_lblTotalTransmissionTime.anchor = GridBagConstraints.EAST;
-		gbc_lblTotalTransmissionTime.gridx = 0;
-		gbc_lblTotalTransmissionTime.gridy = 11;
-		contentPane.add(lblTotalTransmissionTime, gbc_lblTotalTransmissionTime);
-		
-		textField = new JTextField();
-		GridBagConstraints gbc_textField = new GridBagConstraints();
-		gbc_textField.insets = new Insets(0, 0, 5, 0);
-		gbc_textField.fill = GridBagConstraints.HORIZONTAL;
-		gbc_textField.gridx = 1;
-		gbc_textField.gridy = 11;
-		contentPane.add(textField, gbc_textField);
-		textField.setColumns(10);
-		
-		btnTransfer = new JButton("Transfer");
-		btnTransfer.setForeground(Color.DARK_GRAY);
-		btnTransfer.setFont(new Font("Tahoma", Font.BOLD, 21));
-		GridBagConstraints gbc_btnTransfer = new GridBagConstraints();
-		gbc_btnTransfer.anchor = GridBagConstraints.WEST;
-		gbc_btnTransfer.gridx = 1;
-		gbc_btnTransfer.gridy = 12;
-		contentPane.add(btnTransfer, gbc_btnTransfer);
-	}
+    /**
+     * Launch the application.
+     */
+    public static void main(String[] args) {
+        EventQueue.invokeLater(new Runnable() {
+            public void run() {
+                try {
+                    Sender frame = new Sender();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
+
+    /**
+     * Create the frame.
+     */
+
+
+    public Sender() {
+
+        this.initGUI();
+    }
+
+    private void sendFile() throws Exception {
+        byte b[] = new byte[1024];
+        FileInputStream f = new FileInputStream(FileName.getText());
+
+    }
+
+    private void addItem(JPanel p, JComponent c, int x, int y, int width, int height, int align) {
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.gridx = x;
+        gc.gridy = y;
+        gc.gridwidth = width;
+        gc.gridheight = height;
+        gc.weightx = 100.0;
+        gc.weighty = 100.0;
+        gc.insets = new Insets(5, 5, 5, 5);
+        gc.anchor = align;
+        gc.fill = GridBagConstraints.NONE;
+        p.add(c, gc);
+    }
+
+    private void initGUI() {
+        IPAddress = new JTextField();
+        SenderPort = new JTextField();
+        ReceiverPort = new JTextField();
+        FileName = new JTextField();
+        Timeout = new JTextField();
+        TotalTransmissionTime = new JTextField();
+
+        JButton btnTransfer;
+
+
+        this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+        JPanel contentPane = new JPanel();
+        contentPane.setLayout(new GridBagLayout());
+
+        JLabel ipLabel = new JLabel("IP Address");
+        addItem(contentPane, ipLabel, 0, 0, 1, 1, GridBagConstraints.WEST);
+
+
+        IPAddress.setText("Enter IP Address");
+        IPAddress.setColumns(20);
+        addItem(contentPane, IPAddress, 1, 0, 2, 1, GridBagConstraints.WEST);
+
+        JLabel lblUdpReceive = new JLabel("Receiver Port");
+        addItem(contentPane, lblUdpReceive, 3, 0, 1, 1, GridBagConstraints.WEST);
+
+        //ReceiverPort.setText("Enter Port # of the Receiver");
+        ReceiverPort.setColumns(10);
+        addItem(contentPane, ReceiverPort, 4, 0, 1, 1, GridBagConstraints.WEST);
+
+
+        //SenderPort.setText("Enter Port # of the Sender");
+        //SenderPort.setColumns(10);
+
+        JLabel lblFileName = new JLabel("File Name");
+        addItem(contentPane, lblFileName, 0, 1, 1, 1, GridBagConstraints.WEST);
+
+        FileName.setText("File Name");
+        FileName.setColumns(20);
+        addItem(contentPane, FileName, 1, 1, 2, 1, GridBagConstraints.WEST);
+
+        JLabel lblUdpSend = new JLabel("Sender Port");
+        addItem(contentPane, lblUdpSend, 3, 1, 1, 1, GridBagConstraints.WEST);
+
+        SenderPort.setColumns(10);
+        addItem(contentPane, SenderPort, 4, 1, 1, 1, GridBagConstraints.WEST);
+
+        JLabel lblDatagramMaxSize = new JLabel("Datagram Max Size");
+        addItem(contentPane, lblDatagramMaxSize, 0, 2, 1, 1, GridBagConstraints.WEST);
+
+        MaxFileSize = new JTextField();
+        //MaxFileSize.setText("Max Size");
+        MaxFileSize.setColumns(10);
+        addItem(contentPane, MaxFileSize, 1, 2, 1, 1, GridBagConstraints.WEST);
+
+        JLabel lblTimeout = new JLabel("Timeout");
+        addItem(contentPane, lblTimeout, 3, 2, 1, 1, GridBagConstraints.WEST);
+
+        Timeout.setColumns(10);
+        addItem(contentPane, Timeout, 4, 2, 1, 1, GridBagConstraints.WEST);
+
+        JLabel lblTotalTransmissionTime = new JLabel("Total Transmission Time");
+        addItem(contentPane, lblTotalTransmissionTime, 0, 3, 1, 1, GridBagConstraints.WEST);
+
+        TotalTransmissionTime.setColumns(10);
+        addItem(contentPane, TotalTransmissionTime, 1, 3, 1, 1, GridBagConstraints.WEST);
+
+        btnTransfer = new JButton("Transfer");
+        btnTransfer.setForeground(Color.DARK_GRAY);
+        btnTransfer.setFont(new Font("Tahoma", Font.BOLD, 21));
+        addItem(contentPane, btnTransfer, 2, 4, 1, 1, GridBagConstraints.WEST);
+
+        btnTransfer.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+
+            }
+        });
+        this.add(contentPane);
+        this.pack();
+        this.setVisible(true);
+    }
 
 }
