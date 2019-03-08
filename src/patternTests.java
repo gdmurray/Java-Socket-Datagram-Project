@@ -5,7 +5,7 @@
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class temp {
+public class patternTests {
     public static void main(String[] args) {
         String stringToSearch = "<transmission MDS=2048>";
         String testString = "<transmission MDS=2048>";
