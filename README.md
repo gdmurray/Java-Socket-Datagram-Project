@@ -9,6 +9,9 @@ An example handshake would be `<transmission MDS=1024>`.
 
 The receiver would get this handshake, it would then match the regex pattern of `<transmission MDS=(\\d+)>` and then extract the group and set the buffer to 1024.
 
+Once the Buffer is initialized, the reader will send back the string `SEND`, which indicates that the Sender is clear to send the contents of the file.
+
+The Sender is waiting for this command, and will not send anything until it is received.
 #### Datagram Format
 
 The format of the datagram is simple, it reserves 4 bytes at the end of the packet for the sequence number.
