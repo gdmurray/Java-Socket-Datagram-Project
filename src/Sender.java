@@ -19,18 +19,17 @@ import java.util.Map;
 import java.util.HashMap;
 
 public class Sender extends JFrame {
-
+    private JTextField ReceiverPort = new JTextField();
+    private JTextField SenderPort = new JTextField();
+    private JTextField MaxDataGramSize = new JTextField();
+    private JTextField Timeout = new JTextField();
     private JTextField IPAddress;
-    private JTextField ReceiverPort;
-    private JTextField SenderPort;
-    private JTextField FileName;
-    private JTextField MaxDataGramSize;
-    private JTextField Timeout;
     private JTextField TotalTransmissionTime;
+    private JTextField FileName;
     private static TransferThread activeThread;
 
     //Default Values when gui not filled
-    private final Map<JComponent, Integer> DefaultValueMap = new HashMap<JComponent, Integer>() {{
+    private final Map<JTextField, Integer> DefaultValueMap = new HashMap<JTextField, Integer>() {{
         put(ReceiverPort, 8080);
         put(SenderPort, 8081);
         put(MaxDataGramSize, 1024);
@@ -43,13 +42,19 @@ public class Sender extends JFrame {
     public static void main(String[] args) {
         try {
             Sender sender = new Sender();
-            activeThread = new TransferThread();
-            activeThread.run(sender);
+            activeThread = new TransferThread(sender);
+            activeThread.start();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
+    private Sender() {
+        this.initGUI();
+
+        //Comment this out if you don't want default values
+        this.initValues();
+    }
 
     /* a getter for the fields that returns default if not set*/
     private int getValue(JTextField component) {
@@ -86,6 +91,9 @@ public class Sender extends JFrame {
     }
 
     private static byte[] intToBytes(final int a) {
+        /*
+        Takes an integer and converts to a 4-byte byte array
+         */
         return new byte[]{
                 (byte) ((a >> 24) & 0xff),
                 (byte) ((a >> 16) & 0xff),
@@ -95,10 +103,16 @@ public class Sender extends JFrame {
     }
 
     private static int fromByteArray(byte[] bytes) {
+        /*
+        Takes a 4-byte byte array and converts it into an integer
+         */
         return bytes[0] << 24 | (bytes[1] & 0xFF) << 16 | (bytes[2] & 0xFF) << 8 | (bytes[3] & 0xFF);
     }
 
     private static byte[] addAll(final byte[] array1, byte[] array2) {
+        /*
+        Combines two byte arrays to make 1
+         */
         byte[] joinedArray = Arrays.copyOf(array1, array1.length + array2.length);
         System.arraycopy(array2, 0, joinedArray, array1.length, array2.length);
         return joinedArray;
@@ -106,30 +120,37 @@ public class Sender extends JFrame {
 
 
     private static class TransferThread extends Thread {
+        /*
+        Thread which facilitates the transfer, long running task could interrupt GUI
+         */
         DatagramSocket send;
         Sender sender;
-        byte[] buf;
         FileInputStream fis;
-        int avail, prev_avail;
-        int packet;
         InetAddress address;
-        int receiverPort;
-        int timeout;
-        long start;
-        long finish;
+        byte[] buf;
+        int avail, prev_avail, packet;
+        int receiverPort, senderPort, timeout;
+        long start, finish;
 
-        private void run(Sender s) {
+        private TransferThread(Sender s) {
+            /*
+            Constructor of Thread, takes sender parameters and binds to thread instance
+             */
+            this.sender = s;
+            this.senderPort = s.getValue(s.SenderPort);
+            this.address = sender.getIPAddress();
+            this.receiverPort = this.sender.getValue(this.sender.ReceiverPort);
+            this.timeout = this.sender.getValue(this.sender.Timeout);
+
+        }
+
+        public void run() {
+            /*
+            Starts Thread and opens socket for sending
+             */
             try {
                 System.out.println("Initializing Transfer thread");
-
-                int senderPort = s.getValue(s.SenderPort);
-
-                this.sender = s;
-                this.send = new DatagramSocket(senderPort);
-                this.address = sender.getIPAddress();
-                this.receiverPort = this.sender.getValue(this.sender.ReceiverPort);
-                this.timeout = this.sender.getValue(this.sender.Timeout);
-
+                this.send = new DatagramSocket(this.senderPort);
                 System.out.println("Transfer Thread Initialized on Port: " + senderPort);
             } catch (SocketException e) {
                 System.out.println("Socket Exception: " + e.toString());
@@ -137,114 +158,69 @@ public class Sender extends JFrame {
 
         }
 
-        private int receiveAck() throws SocketTimeoutException, IOException {
+        private void transferFile() {
             /*
-            This function receives the Ack and throws a timeout
+            This method initiates the transfer of the file
              */
-            this.send.setSoTimeout(this.timeout);
-
-            byte ack_buffer[] = new byte[4];
-            DatagramPacket ack_packet = new DatagramPacket(ack_buffer, ack_buffer.length);
-            this.send.receive(ack_packet);
-
-            this.send.setSoTimeout(0);
-            return fromByteArray(ack_buffer);
-        }
-
-        private DatagramPacket createChunk(byte[] seq, byte[] buffer, int av, int pre_av) {
-            DatagramPacket pkg;
-            if (av == 0) {
-                byte eo_buf[] = addAll(Arrays.copyOfRange(buffer, 0, pre_av), seq);
-                pkg = new DatagramPacket(eo_buf, eo_buf.length, address, receiverPort);
-            } else {
-                pkg = new DatagramPacket(buffer, buffer.length, address, receiverPort);
-                for (int j = 0; j < 4; j++) {
-                    buffer[buffer.length - (4 - j)] = seq[j];
-                }
-            }
-            return pkg;
-        }
-
-        private void reTransmitChunk(int i) {
-            byte[] tmpbuf = new byte[this.sender.getValue(this.sender.MaxDataGramSize)];
+            System.out.println("Transferring File");
             try {
-                System.out.println("Retransmitting Chunk: " + i);
-                FileInputStream bis = new FileInputStream(this.sender.FileName.getText());
-                System.out.println("Offset: " + (i * (tmpbuf.length - 4)));
-                bis.skip((long) (i * (tmpbuf.length - 4)));
-                int len = bis.read(tmpbuf, 0, tmpbuf.length - 4);
-                byte[] seq = (intToBytes(i));
 
-                System.out.println("Retransmitted Data for Chunk: " + i);
-                System.out.println(new String(tmpbuf, 0, (tmpbuf.length - 4)));
-                if (len != -1) {
-                    DatagramPacket pkg = createChunk(seq, tmpbuf, this.avail, this.prev_avail);
-                    this.send.send(pkg);
-                    System.out.println("Retransmitted chunk");
+                // Fetches Max Datagram Size to instantiate buffer
+                this.buf = new byte[this.sender.getValue(this.sender.MaxDataGramSize)];
+
+                this.fis = new FileInputStream(this.sender.FileName.getText());
+
+                // Create handshake to send to server and get echo response
+                String connectString = "<transmission MDS=" + this.sender.getValue(this.sender.MaxDataGramSize) + ">";
+                System.out.println("Connect String: " + connectString);
+
+                byte connect[] = connectString.getBytes();
+
+                //Creates connection handshake packet and sends to receiver
+                DatagramPacket conn = new DatagramPacket(connect, connect.length, address, receiverPort);
+                System.out.println("Sending Handshake");
+                this.send.send(conn);
+
+                byte confirm[] = new byte[64];
+                DatagramPacket packet = new DatagramPacket(confirm, confirm.length);
+                this.send.receive(packet);
+
+                //Check if server Response with SEND, handshake confirmed and can initiate file transmission
+                if (new String(
+                        packet.getData(), 0, packet.getLength()).equals("SEND")) {
+                    System.out.println("HandShake Received, Transmitting File");
+                    transmitFile();
                 }
+
+
             } catch (FileNotFoundException e) {
-                System.out.println("File not found exception");
+                System.out.println("File not Found: " + e.toString());
             } catch (IOException e) {
-                System.out.println("IO Exception... Annoying");
-            }
-
-        }
-
-        public void sendChunk() throws IOException, EOFTransmission {
-            int len = this.fis.read(this.buf, 0, this.buf.length - 4);
-            this.avail = fis.available();
-            System.out.println("SendChunk: Len: " + len);
-            byte[] seq = (intToBytes(this.packet));
-
-            //System.out.println("Current vs Previous Avail: " + this.avail + " , " + this.prev_avail);
-            if (len != -1) {
-                DatagramPacket pkg = createChunk(seq, this.buf, this.avail, this.prev_avail);
-                this.send.send(pkg);
-                this.prev_avail = fis.available();
-                this.packet++;
-            } else {
-                throw new EOFTransmission("End of File Reached");
-            }
-        }
-
-        private void endTransmission() {
-
-            /*
-            Ends the transmission with an EOF request
-             */
-
-            byte[] endbuff = "END".getBytes();
-            DatagramPacket endpkg = new DatagramPacket(endbuff, endbuff.length, this.address, this.receiverPort);
-            try {
-                this.send.send(endpkg);
-                this.finish = System.currentTimeMillis();
-                this.sender.setTotalTime((finish - start));
-            } catch (IOException e) {
-                System.out.println("End Transmission IO Exception: " + e.toString());
+                System.out.println("IO Exception: " + e.toString());
             }
         }
 
         private void transmitFile() {
+            /*
+            This method facilitates the sending of the active file
+             */
             try {
                 System.out.println("Attempting to Transmit File");
 
-
                 this.start = System.currentTimeMillis();
+
                 //Send First Chunk
                 this.packet = 0;
                 int activePacket = 0;
-                //this.prev_avail = this.fis.available();
+                this.prev_avail = this.fis.available();
                 int activeAck;
 
                 sendChunk();
 
-
                 //Loop from the top
                 while (true) {
-                    System.out.println("Starting While Loop...");
                     try {
                         //Receive Ack
-
                         activeAck = receiveAck();
 
                         System.out.println("Active Returned Ack :" + activeAck);
@@ -275,46 +251,122 @@ public class Sender extends JFrame {
             }
         }
 
-        private void transferFile() {
-            System.out.println("Transfering File");
-            try {
-                // Fetches Max Datagram Size to instantiate buffer
-                this.buf = new byte[this.sender.getValue(this.sender.MaxDataGramSize)];
+        private int receiveAck() throws SocketTimeoutException, IOException {
+            /*
+            This function receives the Ack and throws a timeout
+             */
+            // Set timeout before receiving ack
+            this.send.setSoTimeout(this.timeout);
 
-                this.fis = new FileInputStream(this.sender.FileName.getText());
+            byte ack_buffer[] = new byte[4];
+            DatagramPacket ack_packet = new DatagramPacket(ack_buffer, ack_buffer.length);
 
-                // Create handshake to send to server and get echo response
-                String connectString = "<transmission MDS=" + this.sender.getValue(this.sender.MaxDataGramSize) + ">";
-                System.out.println("Connect String: " + connectString);
+            this.send.receive(ack_packet);
 
-                byte connect[] = connectString.getBytes();
+            // Once ack received, set timeout to 0
+            this.send.setSoTimeout(0);
 
-                DatagramPacket conn = new DatagramPacket(connect, connect.length, address, receiverPort);
-                System.out.println("Sending Handshake");
-                this.send.send(conn);
+            return fromByteArray(ack_buffer);
+        }
 
-
-                byte confirm[] = new byte[64];
-                DatagramPacket packet = new DatagramPacket(confirm, confirm.length);
-                this.send.receive(packet);
-
-                //Check if server Response with SEND, handshake confirmed.
-                if (new String(
-                        packet.getData(), 0, packet.getLength()).equals("SEND")) {
-                    System.out.println("HandShake Received");
-                    transmitFile();
+        private DatagramPacket createChunk(byte[] seq, byte[] buffer, int av, int pre_av) {
+            /*
+            Builds the datagram chunk from the buffer and sequence number
+             */
+            DatagramPacket pkg;
+            if (av == 0) {
+                // Combines the bytes into one array consisting of content + sequence
+                byte eo_buf[] = addAll(Arrays.copyOfRange(buffer, 0, pre_av), seq);
+                pkg = new DatagramPacket(eo_buf, eo_buf.length, address, receiverPort);
+            } else {
+                pkg = new DatagramPacket(buffer, buffer.length, address, receiverPort);
+                for (int j = 0; j < 4; j++) {
+                    buffer[buffer.length - (4 - j)] = seq[j];
                 }
+            }
+            return pkg;
+        }
 
+        private void reTransmitChunk(int i) {
+            /*
+            When a transfer timed out, retransmit that chunk from the given sequence.
+             */
+            byte[] tmpbuf = new byte[this.sender.getValue(this.sender.MaxDataGramSize)];
+            try {
+                // Since the file input stream reads the file in a forward motion
+                // we need to re-open the file and skip to that section in the file
+                System.out.println("Retransmitting Chunk: " + i);
+                FileInputStream bis = new FileInputStream(this.sender.FileName.getText());
 
+                System.out.println("Offset: " + (i * (tmpbuf.length - 4)));
+
+                // Skip to part in file that is where the data segment would begin
+                bis.skip((long) (i * (tmpbuf.length - 4)));
+                int len = bis.read(tmpbuf, 0, tmpbuf.length - 4);
+                byte[] seq = (intToBytes(i));
+
+                //System.out.println("Retransmitted Data for Chunk: " + i);
+                //System.out.println(new String(tmpbuf, 0, (tmpbuf.length - 4)));
+                //If this isnt end of file
+                if (len != -1) {
+                    DatagramPacket pkg = createChunk(seq, tmpbuf, this.avail, this.prev_avail);
+                    this.send.send(pkg);
+                    System.out.println("Retransmitted chunk");
+                }
             } catch (FileNotFoundException e) {
-                System.out.println("File not Found: " + e.toString());
+                System.out.println("File not found exception: " + e.toString());
             } catch (IOException e) {
                 System.out.println("IO Exception: " + e.toString());
             }
+
         }
 
-        public class EOFTransmission extends Exception {
+        private void sendChunk() throws IOException, EOFTransmission {
+            /*
+            Transmits the next chunk in the file sending process
+             */
+            int len = this.fis.read(this.buf, 0, this.buf.length - 4);
 
+            //How many bytes are available in the file
+            this.avail = fis.available();
+
+            System.out.println("SendChunk: Len: " + len);
+            byte[] seq = (intToBytes(this.packet));
+
+            //System.out.println("Current vs Previous Avail: " + this.avail + " , " + this.prev_avail);
+            //If it isnt the end of the file
+            if (len != -1) {
+                DatagramPacket pkg = createChunk(seq, this.buf, this.avail, this.prev_avail);
+                this.send.send(pkg);
+                this.prev_avail = fis.available();
+                this.packet++;
+            } else {
+                throw new EOFTransmission("End of File Reached");
+            }
+        }
+
+        private void endTransmission() {
+            /*
+            Ends the transmission with an EOF request
+             */
+
+            byte[] endbuff = "END".getBytes();
+            DatagramPacket endpkg = new DatagramPacket(endbuff, endbuff.length, this.address, this.receiverPort);
+            try {
+                this.send.send(endpkg);
+                //Confirm end of processing and report time
+                this.finish = System.currentTimeMillis();
+                this.sender.setTotalTime((finish - start));
+            } catch (IOException e) {
+                System.out.println("End Transmission IO Exception: " + e.toString());
+            }
+        }
+
+
+        public class EOFTransmission extends Exception {
+            /*
+            Custom Exception class to alert the event loop that the end of the file has been reached
+             */
             private EOFTransmission(String message) {
                 super(message);
             }
@@ -325,11 +377,6 @@ public class Sender extends JFrame {
 
         }
 
-    }
-
-    private Sender() {
-        this.initGUI();
-        this.initValues();
     }
 
     private void addItem(JPanel p, JComponent c, int x, int y, int width, int height, int align) {
@@ -349,22 +396,19 @@ public class Sender extends JFrame {
         p.add(c, gc);
     }
 
-    /**
-     * Create the frame.
-     */
 
     private void transfer() {
         activeThread.transferFile();
     }
 
+    /**
+     * Create the frame.
+     */
     private void initGUI() {
         this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        IPAddress = new JTextField();
-        SenderPort = new JTextField();
-        ReceiverPort = new JTextField();
-        FileName = new JTextField();
-        Timeout = new JTextField();
-        TotalTransmissionTime = new JTextField();
+        this.TotalTransmissionTime = new JTextField();
+        this.IPAddress = new JTextField();
+        this.FileName = new JTextField();
         JButton btnTransfer;
 
         JPanel contentPane = new JPanel();
@@ -399,7 +443,6 @@ public class Sender extends JFrame {
         JLabel lblDatagramMaxSize = new JLabel("Datagram Max Size");
         addItem(contentPane, lblDatagramMaxSize, 0, 2, 1, 1, GridBagConstraints.WEST);
 
-        MaxDataGramSize = new JTextField();
         MaxDataGramSize.setColumns(10);
         addItem(contentPane, MaxDataGramSize, 1, 2, 1, 1, GridBagConstraints.WEST);
 
@@ -440,10 +483,10 @@ public class Sender extends JFrame {
         } catch (UnknownHostException e) {
             System.out.println(e);
         }
-        ReceiverPort.setText(Integer.toString(this.getValue(ReceiverPort)));
-        SenderPort.setText(Integer.toString(this.getValue(SenderPort)));
-        MaxDataGramSize.setText(Integer.toString(this.getValue(MaxDataGramSize)));
-        Timeout.setText(Integer.toString(this.getValue(Timeout)));
+        ReceiverPort.setText(Integer.toString(this.getValue(this.ReceiverPort)));
+        SenderPort.setText(Integer.toString(this.getValue(this.SenderPort)));
+        MaxDataGramSize.setText(Integer.toString(this.getValue(this.MaxDataGramSize)));
+        Timeout.setText(Integer.toString(this.getValue(this.Timeout)));
         FileName.setText("file.txt");
     }
 

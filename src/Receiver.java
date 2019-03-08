@@ -2,7 +2,6 @@ import javax.swing.*;
 import java.awt.GridBagLayout;
 import java.awt.GridBagConstraints;
 import java.awt.Insets;
-import java.lang.reflect.Array;
 import java.util.*;
 import java.io.*;
 import java.net.*;
@@ -18,7 +17,7 @@ public class Receiver extends JFrame {
     private JTextField ReceivedPackets;
     private JToggleButton isReliable;
 
-
+    //Map of the default values if no GUI value provided
     private final Map<JComponent, Integer> DefaultValueMap = new HashMap<JComponent, Integer>() {{
         put(ReceiverPort, 8080);
         put(SenderPort, 8081);
@@ -30,14 +29,23 @@ public class Receiver extends JFrame {
     public static void main(String[] args) {
         try {
             Receiver receiver = new Receiver();
-            ReceiverThread activeThread = new ReceiverThread();
-            activeThread.run(receiver);
+            ReceiverThread activeThread = new ReceiverThread(receiver);
+            activeThread.start();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    public int getValue(JTextField component) {
+    private Receiver() {
+        initGUI();
+        initValues();
+    }
+
+    private int getValue(JTextField component) {
+        /*
+        Fetches the value for the given field.
+        If GUI is empty or cant be parsed, uses default value
+         */
         if (!(component.getText().isEmpty())) {
             try {
                 return Integer.parseInt(component.getText());
@@ -49,7 +57,11 @@ public class Receiver extends JFrame {
         }
     }
 
-    public InetAddress getIPAddress() {
+    private InetAddress getIPAddress() {
+        /*
+        Fetches IP Address from Client.
+        Gives the default localhost if none provided
+         */
         if (!(this.IPAddress.getText().isEmpty())) {
             try {
                 return InetAddress.getByName(this.IPAddress.getText());
@@ -67,35 +79,41 @@ public class Receiver extends JFrame {
     }
 
     private boolean isReliable() {
+        /*
+        Whether the Receiver is in Reliable Mode or Not
+         */
         return (this.isReliable.isSelected());
     }
 
-    public void setReceivedPackets(int packets) {
+    private void setReceivedPackets(int packets) {
         this.ReceivedPackets.setText(Integer.toString(packets));
     }
 
     private static byte[] intToBytes(final int a) {
+        /*
+        Takes an integer and converts to a 4-byte byte array
+         */
         return new byte[]{
                 (byte) ((a >> 24) & 0xff),
                 (byte) ((a >> 16) & 0xff),
                 (byte) ((a >> 8) & 0xff),
-                (byte) ((a >> 0) & 0xff),
+                (byte) ((a) & 0xff),
         };
     }
 
-    public static int fromByteArray(byte[] bytes) {
+    private static int fromByteArray(byte[] bytes) {
+        /*
+        Takes a 4-byte byte array and converts it into an integer
+         */
         return bytes[0] << 24 | (bytes[1] & 0xFF) << 16 | (bytes[2] & 0xFF) << 8 | (bytes[3] & 0xFF);
     }
 
-    /**
-     * Create the frame.
-     */
-
     public static class ReceiverThread extends Thread {
-        int receiverPort;
-        int senderPort;
+        int receiverPort, senderPort;
         int inOrderPackets;
         int bufferSize = 1024; //default buffer size
+        int activeAck = 0;
+
         Receiver receiver;
         DatagramSocket receive;
 
@@ -103,11 +121,127 @@ public class Receiver extends JFrame {
         String handshakePattern = "<transmission MDS=(\\d+)>";
         Pattern p = Pattern.compile(handshakePattern);
 
-        int activeAck = 0;
+        private ReceiverThread(Receiver r) {
+            /*
+            Constructor of Thread, takes receiver parameters and binds to thread instance
+             */
+            this.receiver = r;
+            this.receiverPort = r.getValue(r.ReceiverPort);
+            this.senderPort = r.getValue(r.SenderPort);
+        }
+
+        public void run() {
+            /*
+            Main Event Loop for Receiver.
+            Listens for a handshake value matching defined pattern
+            Extracts the buffer size from the handshake
+            Then Listens for file packets until end of file transmission is received
+             */
+            try {
+                System.out.println("Opening Datagram Socket to receive Files.");
+                // Start Receiver thread and create socket
+
+                this.receive = new DatagramSocket(receiverPort);
+
+                System.out.println("Listening on port: " + receiverPort);
+
+                byte[] listenerBuf = new byte[1024];
+                DatagramPacket pkg = new DatagramPacket(listenerBuf, listenerBuf.length);
+
+                while (true) {
+                    try {
+                        //Listen for Handshake
+                        receive.receive(pkg);
+                        String recv = new String(pkg.getData(), 0, pkg.getLength());
+                        System.out.println("Received Packet: " + recv);
+
+                        Map<Integer, byte[]> FileMap = new HashMap<Integer, byte[]>();
+
+                        //If handshake matches handshake pattern with the byte size, then start
+                        if (recv.matches(handshakePattern)) {
+                            System.out.println("Regex Matches");
+                            Matcher m = p.matcher(recv);
+                            if (m.find()) {
+                                String mbs = m.group(1);
+                                this.bufferSize = Integer.parseInt(mbs);
+                                System.out.println("Pattern Matches and found buffer: " + this.bufferSize);
+                            }
+                            // Send handshake
+                            System.out.println("Sending Handshake");
+                            this.handshake();
+
+                            //New file
+                            File newfile = new File(this.receiver.FileName.getText());
+                            FileOutputStream bos = new FileOutputStream(newfile);
+
+                            //Set buffer to size defined in handshake
+                            byte[] buf = new byte[this.bufferSize];
+                            DatagramPacket packet = new DatagramPacket(buf, buf.length);
+
+                            receive.receive(packet);
+                            int packetsReceived = 0, previous_seq = 0, current_seq;
+                            this.inOrderPackets = 0;
+
+                            //Loop until End Transmission is Received
+                            while (!(new String(packet.getData(), 0, packet.getLength()).equals("END"))) {
+
+                                //Extract content from payload, last 4-bytes are always sequence number
+                                byte[] content = Arrays.copyOfRange(packet.getData(), 0, packet.getLength() - 4);
+                                byte[] seq = Arrays.copyOfRange(packet.getData(), packet.getLength() - 4, packet.getLength());
+                                current_seq = fromByteArray(seq);
+
+                                //Check if chunk has been received or not
+                                if (!(FileMap.containsKey(current_seq))) {
+                                    FileMap.put(current_seq, content);
+                                    packetsReceived++;
+
+                                    // If reliable mode is off, and packets received is every 10th, drop it.
+                                    if (!(this.receiver.isReliable()) && (packetsReceived % 10 == 0)) {
+                                        System.out.println("In Unreliable Mode, dropping this packet: " + current_seq);
+                                        System.out.println("Content of Dropped Packet");
+                                        System.out.println(new String(content, 0, content.length));
+                                        current_seq = previous_seq;
+                                    } else {
+                                        System.out.println("Sending ack: " + (this.activeAck));
+                                        sendAck();
+
+                                    }
+                                } else {
+                                    // Duplicate, send Ack to acknowledge we have it
+                                    sendAck();
+                                }
+
+                                if ((current_seq - previous_seq) == 1) {
+                                    inOrderPackets++;
+                                }
+
+                                System.out.println("Sequence #" + fromByteArray(seq) + " Length: " + content.length);
+                                previous_seq = current_seq;
+
+                                //Get Next Packet
+                                receive.receive(packet);
+                            }
+
+                            buildFile(FileMap, bos);
+                            System.out.println("End of Transmission Received");
+                            this.receiver.setReceivedPackets(inOrderPackets);
+
+                        } else {
+                            System.out.println("Request does not match the pattern");
+                        }
+
+                    } catch (IOException e) {
+                        System.out.println("IOException: " + e.toString());
+                    }
+                }
+
+            } catch (SocketException e) {
+                System.out.println("Socket Exception: " + e.toString());
+            }
+        }
 
         private void sendAck() {
             /*
-
             Sends ack to server
              */
             if (this.activeAck == 0) {
@@ -144,7 +278,10 @@ public class Receiver extends JFrame {
 
         }
 
-        private void handshake(DatagramPacket pkg) {
+        private void handshake() {
+            /*
+            Sends a handshake back to the server to initiate file transfer
+             */
             byte[] confirm = "SEND".getBytes();
             DatagramPacket responsePkg = new DatagramPacket(confirm, confirm.length, this.receiver.getIPAddress(), this.senderPort);
 
@@ -153,111 +290,6 @@ public class Receiver extends JFrame {
                 System.out.println("Sent Handshake");
             } catch (IOException e) {
                 System.out.println("Error Handshaking");
-            }
-        }
-
-        public void run(Receiver r) {
-            try {
-                System.out.println("Opening Datagram Socket to receive Files.");
-                // Start Receiver thread and create socket
-                this.receiver = r;
-                this.receiverPort = r.getValue(r.ReceiverPort);
-                this.senderPort = r.getValue(r.SenderPort);
-                this.receive = new DatagramSocket(receiverPort);
-
-                System.out.println("Listening on port: " + receiverPort);
-
-                byte[] listenerBuf = new byte[1024];
-                DatagramPacket pkg = new DatagramPacket(listenerBuf, listenerBuf.length);
-
-                while (true) {
-                    try {
-                        //Listen for Handshake
-                        receive.receive(pkg);
-                        String recv = new String(pkg.getData(), 0, pkg.getLength());
-                        System.out.println("Received Packet: " + recv);
-
-                        Map<Integer, byte[]> FileMap = new HashMap<Integer, byte[]>();
-
-                        //If handshake matches handshake pattern with the byte size, then start
-                        if (recv.matches(handshakePattern)) {
-                            System.out.println("Regex Matches");
-                            Matcher m = p.matcher(recv);
-                            if (m.find()) {
-                                String mbs = m.group(1);
-                                this.bufferSize = Integer.parseInt(mbs);
-                                System.out.println("Pattern Matches and found buffer: " + this.bufferSize);
-                            }
-                            // Send handshake
-                            System.out.println("Sending Handshake");
-                            this.handshake(pkg);
-
-                            //New file
-                            File newfile = new File(r.FileName.getText());
-                            FileOutputStream bos = new FileOutputStream(newfile);
-
-                            //Set buffer to size defined in handshake
-                            byte[] buf = new byte[this.bufferSize];
-                            DatagramPacket packet = new DatagramPacket(buf, buf.length);
-
-                            receive.receive(packet);
-                            int packetsReceived = 0, current_seq = 0, previous_seq = 0;
-                            this.inOrderPackets = 0;
-
-                            //Loop until End Transmission is broadcasted
-                            while (!(new String(packet.getData(), 0, packet.getLength()).equals("END"))) {
-
-                                //System.out.println("Packet Length: " + packet.getLength());
-                                byte[] content = Arrays.copyOfRange(packet.getData(), 0, packet.getLength() - 4);
-                                byte[] seq = Arrays.copyOfRange(packet.getData(), packet.getLength() - 4, packet.getLength());
-                                current_seq = fromByteArray(seq);
-
-                                if (!(FileMap.containsKey(current_seq))) {
-                                    FileMap.put(current_seq, content);
-                                    packetsReceived++;
-
-                                    // If reliable mode is off, and packets received is every 10th, drop it.
-                                    if (!(this.receiver.isReliable()) && (packetsReceived % 10 == 0)) {
-                                        System.out.println("In Unreliable Mode, dropping this packet: " + current_seq);
-                                        System.out.println("Content of Dropped Packet");
-                                        System.out.println(new String(content, 0, content.length));
-                                        current_seq = previous_seq;
-                                    } else {
-                                        System.out.println("Sending ack: " + (this.activeAck));
-                                        sendAck();
-
-                                    }
-                                    // Duplicate, send Ack to acknowledge we have it
-                                } else {
-                                    sendAck();
-                                }
-
-
-                                if ((current_seq - previous_seq) == 1) {
-                                    inOrderPackets++;
-                                }
-
-                                System.out.println("Sequence #" + fromByteArray(seq) + " Length: " + content.length);
-
-                                previous_seq = current_seq;
-                                receive.receive(packet);
-                            }
-
-                            buildFile(FileMap, bos);
-                            System.out.println("END reached");
-                            this.receiver.setReceivedPackets(inOrderPackets);
-
-                        } else {
-                            System.out.println("Request does not match the pattern");
-                        }
-
-                    } catch (IOException e) {
-                        System.out.println("IOException: " + e.toString());
-                    }
-                }
-
-            } catch (SocketException e) {
-                System.out.println("Socket Exception: " + e.toString());
             }
         }
     }
@@ -307,7 +339,6 @@ public class Receiver extends JFrame {
         ReceivedPackets.setColumns(10);
         addItem(contentPane, ReceivedPackets, 1, 3, 1, 1, GridBagConstraints.WEST);
 
-
         this.add(contentPane);
         this.pack();
         this.setVisible(true);
@@ -318,7 +349,7 @@ public class Receiver extends JFrame {
         try {
             IPAddress.setText(InetAddress.getLocalHost().getHostAddress());
         } catch (UnknownHostException e) {
-            System.out.println(e);
+            System.out.println("Unknown host in initValues: " + e.toString());
         }
         ReceiverPort.setText("8080");
         SenderPort.setText("8081");
@@ -327,6 +358,9 @@ public class Receiver extends JFrame {
     }
 
     private void addItem(JPanel p, JComponent c, int x, int y, int width, int height, int align) {
+        /*
+        Condense arbitrary elements
+         */
         GridBagConstraints gc = new GridBagConstraints();
         gc.gridx = x;
         gc.gridy = y;
@@ -338,11 +372,6 @@ public class Receiver extends JFrame {
         gc.anchor = align;
         gc.fill = GridBagConstraints.NONE;
         p.add(c, gc);
-    }
-
-    public Receiver() {
-        initGUI();
-        initValues();
     }
 
 }
