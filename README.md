@@ -17,4 +17,7 @@ The Sender is waiting for this command, and will not send anything until it is r
 The format of the datagram is simple, it reserves 4 bytes at the end of the packet for the sequence number.
 This means that the content size of any full block is `MAX_SIZE - 4`.
 In a typical block, it will contain <=1020 bytes of data and 4 bytes of sequence information.
+#### Timing Report
+
+In the transfer of a small file (under 4 Kb) the program took 49 Milliseconds to transfer the file. And in the case of a larger file it took 2.154 seconds to transfer the file. 
 
