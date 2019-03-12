@@ -2,20 +2,35 @@ import javax.swing.*;
 import java.awt.GridBagLayout;
 import java.awt.GridBagConstraints;
 import java.awt.Insets;
+import java.awt.event.*;
 import java.util.*;
 import java.io.*;
+import java.awt.*;
+import java.util.List;
 import java.net.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class Receiver extends JFrame {
-    //private static ReceiverThread activeThread;
+
+    private static ReceiverThread activeThread = null;
     private JTextField IPAddress;
     private JTextField SenderPort;
     private JTextField ReceiverPort;
     private JTextField FileName;
     private JTextField ReceivedPackets;
     private JToggleButton isReliable;
+    private JToggleButton ServerControl;
+    private JLabel ServerStatus;
+    private JLabel ServerStatusMessage;
+
+
+    private static final String RUNNING = "Running";
+    private static final String NOT_RUNNING = "Not Running";
+    private static final String FAILED = "Failed";
+    private static final String ERROR = "Error";
+
+    private static final int MAX_FAIL_COUNT = 15;
 
     //Map of the default values if no GUI value provided
     private final Map<JComponent, Integer> DefaultValueMap = new HashMap<JComponent, Integer>() {{
@@ -23,14 +38,15 @@ public class Receiver extends JFrame {
         put(SenderPort, 8081);
     }};
 
+
     /**
      * Launch the application.
      */
     public static void main(String[] args) {
         try {
             Receiver receiver = new Receiver();
-            ReceiverThread activeThread = new ReceiverThread(receiver);
-            activeThread.start();
+            //activeThread = new ReceiverThread(receiver);
+            //activeThread.start();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -38,7 +54,61 @@ public class Receiver extends JFrame {
 
     private Receiver() {
         initGUI();
+        setServerStatus(NOT_RUNNING);
         initValues();
+    }
+
+    private void setServerStatus(String state, String message) {
+        /*
+        Sets the Displayed Status of the Server with a message
+         */
+        System.out.println(state + " | " + message);
+        this.ServerStatusMessage.setText(message);
+        setServerStatus(state);
+    }
+
+    private void setServerStatusMessage(String message) {
+        /*
+        Sets just the message
+         */
+        System.out.println(message);
+        this.ServerStatusMessage.setText(message);
+    }
+
+    private void setServerStatus(String state) {
+        /*
+        Sets the Displayed Status of the Server with no message
+         */
+        this.ServerStatus.setText(state);
+
+        if (state.equals(FAILED)) {
+            stopServer();
+            ServerControl.setSelected(false);
+            ServerControl.setText("Start");
+        }
+    }
+
+    private void startServer() {
+        /*
+        starts the server by initiating the thread.
+         */
+        activeThread = new ReceiverThread(this);
+        activeThread.start();
+    }
+
+    private void stopServer() {
+        /*
+        Checks if Active thread is running, if so, kill it
+        Also resets the button back to default state
+         */
+        System.out.println("Stopping Server");
+        try {
+            activeThread.receive.close();
+            activeThread.interrupt();
+        } catch (Exception e){
+            System.out.println("Couldnt Stop?");
+        }
+        setServerStatus(NOT_RUNNING);
     }
 
     private int getValue(JTextField component) {
@@ -73,7 +143,7 @@ public class Receiver extends JFrame {
         try {
             return InetAddress.getLocalHost();
         } catch (UnknownHostException e) {
-            System.out.println("Cant get localhost, something is broken");
+            setServerStatus(FAILED, e.toString());
         }
         return null;
     }
@@ -113,6 +183,7 @@ public class Receiver extends JFrame {
         int inOrderPackets;
         int bufferSize = 1024; //default buffer size
         int activeAck = 0;
+        int failCount;
 
         Receiver receiver;
         DatagramSocket receive;
@@ -141,9 +212,11 @@ public class Receiver extends JFrame {
                 System.out.println("Opening Datagram Socket to receive Files.");
                 // Start Receiver thread and create socket
 
+                this.failCount = 0;
+
                 this.receive = new DatagramSocket(receiverPort);
 
-                System.out.println("Listening on port: " + receiverPort);
+                this.receiver.setServerStatus(RUNNING, "Running on port " + receiverPort);
 
                 byte[] listenerBuf = new byte[1024];
                 DatagramPacket pkg = new DatagramPacket(listenerBuf, listenerBuf.length);
@@ -197,9 +270,8 @@ public class Receiver extends JFrame {
 
                                     // If reliable mode is off, and packets received is every 10th, drop it.
                                     if (!(this.receiver.isReliable()) && (packetsReceived % 10 == 0)) {
+                                        // If unreliable mode, just dont send ack
                                         System.out.println("In Unreliable Mode, dropping this packet: " + current_seq);
-                                        System.out.println("Content of Dropped Packet");
-                                        System.out.println(new String(content, 0, content.length));
                                         current_seq = previous_seq;
                                     } else {
                                         System.out.println("Sending ack: " + (this.activeAck));
@@ -223,7 +295,7 @@ public class Receiver extends JFrame {
                             }
 
                             buildFile(FileMap, bos);
-                            System.out.println("End of Transmission Received");
+                            this.receiver.setServerStatusMessage("End of Transmission Received");
                             this.receiver.setReceivedPackets(inOrderPackets);
 
                         } else {
@@ -231,12 +303,17 @@ public class Receiver extends JFrame {
                         }
 
                     } catch (IOException e) {
-                        System.out.println("IOException: " + e.toString());
+                        this.receiver.setServerStatus(ERROR, e.toString());
                     }
                 }
 
             } catch (SocketException e) {
-                System.out.println("Socket Exception: " + e.toString());
+                this.receiver.setServerStatus(FAILED, e.toString());
+                this.failCount++;
+                if(this.failCount >= MAX_FAIL_COUNT){
+                    this.receiver.stopServer();
+                }
+
             }
         }
 
@@ -256,9 +333,9 @@ public class Receiver extends JFrame {
             try {
                 this.receive.send(pkg);
             } catch (IOException e) {
-                System.out.println("Experienced an IOException sending Ack: " + e.toString());
+                //System.out.println("Experienced an IOException sending Ack: " + e.toString());
+                this.receiver.setServerStatus(ERROR, "Experienced an IOException sending Ack: " + e.toString());
             }
-
         }
 
         private void buildFile(Map<Integer, byte[]> map, FileOutputStream bos) {
@@ -273,9 +350,8 @@ public class Receiver extends JFrame {
                     bos.write(map.get(sortedKeys.get(l)));
                 }
             } catch (IOException e) {
-                System.out.println("IO Exception when writing to file");
+                this.receiver.setServerStatus(ERROR, "IO Exception when writing to file" + e.toString());
             }
-
         }
 
         private void handshake() {
@@ -289,7 +365,7 @@ public class Receiver extends JFrame {
                 this.receive.send(responsePkg);
                 System.out.println("Sent Handshake");
             } catch (IOException e) {
-                System.out.println("Error Handshaking");
+                this.receiver.setServerStatus(ERROR, e.toString());
             }
         }
     }
@@ -300,6 +376,9 @@ public class Receiver extends JFrame {
         ReceiverPort = new JTextField();
         FileName = new JTextField();
         ReceivedPackets = new JTextField();
+        ServerStatus = new JLabel();
+        ServerStatusMessage = new JLabel();
+        ServerControl = new JToggleButton("Start");
         isReliable = new JCheckBox("Reliable", true);
 
         this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -339,6 +418,31 @@ public class Receiver extends JFrame {
         ReceivedPackets.setColumns(10);
         addItem(contentPane, ReceivedPackets, 1, 3, 1, 1, GridBagConstraints.WEST);
 
+        addItem(contentPane, ServerControl, 4, 3, 1, 1, GridBagConstraints.WEST);
+
+        addItem(contentPane, ServerStatus, 0, 4, 1, 1, GridBagConstraints.WEST);
+        addItem(contentPane, ServerStatusMessage, 1, 4, 3, 1, GridBagConstraints.WEST);
+
+        setMinimumSize(IPAddress);
+        setMinimumSize(SenderPort);
+        setMinimumSize(ReceiverPort);
+        setMinimumSize(ReceivedPackets);
+        setMinimumSize(FileName);
+
+        ServerControl.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                JToggleButton serverAction = (JToggleButton) e.getSource();
+                if (serverAction.isSelected()) {
+                    serverAction.setText("Stop");
+                    startServer();
+                } else {
+                    serverAction.setText("Start");
+                    stopServer();
+                }
+            }
+        });
+
         this.add(contentPane);
         this.pack();
         this.setVisible(true);
@@ -349,12 +453,21 @@ public class Receiver extends JFrame {
         try {
             IPAddress.setText(InetAddress.getLocalHost().getHostAddress());
         } catch (UnknownHostException e) {
-            System.out.println("Unknown host in initValues: " + e.toString());
+            setServerStatus(FAILED, "Unknown host in initValues: " + e.toString());
         }
         ReceiverPort.setText("8080");
         SenderPort.setText("8081");
-        FileName.setText("newfile.txt");
+        //FileName.setText("newfile.txt");
+    }
 
+    private static void setMinimumSize(final Component c) {
+        /*
+        Avoid everything breaking if a value changes
+        gotta love java
+         */
+        c.setMinimumSize(new Dimension(c
+                .getPreferredSize().width - 1,
+                c.getPreferredSize().height));
     }
 
     private void addItem(JPanel p, JComponent c, int x, int y, int width, int height, int align) {
@@ -373,5 +486,4 @@ public class Receiver extends JFrame {
         gc.fill = GridBagConstraints.NONE;
         p.add(c, gc);
     }
-
 }

@@ -1,15 +1,11 @@
 import javax.swing.JFrame;
 import javax.swing.JPanel;
-import java.awt.GridBagLayout;
+import java.awt.*;
 import javax.swing.JTextField;
-import java.awt.GridBagConstraints;
-import java.awt.Insets;
 import javax.swing.JButton;
 import java.awt.event.ActionListener;
 import java.awt.event.ActionEvent;
 import javax.swing.JLabel;
-import java.awt.Font;
-import java.awt.Color;
 import javax.swing.*;
 import java.lang.*;
 import java.net.*;
@@ -26,7 +22,19 @@ public class Sender extends JFrame {
     private JTextField IPAddress;
     private JTextField TotalTransmissionTime;
     private JTextField FileName;
-    private static TransferThread activeThread;
+    private JToggleButton ServerControl;
+    private JLabel ServerStatus;
+    private JLabel ServerStatusMessage;
+
+    private static TransferThread activeThread = null;
+
+    private static final String RUNNING = "Running";
+    private static final String NOT_RUNNING = "Not Running";
+    private static final String FAILED = "Failed";
+    private static final String ERROR = "Error";
+
+    private static final int MAX_FAIL_COUNT = 5;
+
 
     //Default Values when gui not filled
     private final Map<JTextField, Integer> DefaultValueMap = new HashMap<JTextField, Integer>() {{
@@ -42,8 +50,6 @@ public class Sender extends JFrame {
     public static void main(String[] args) {
         try {
             Sender sender = new Sender();
-            activeThread = new TransferThread(sender);
-            activeThread.start();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -51,9 +57,63 @@ public class Sender extends JFrame {
 
     private Sender() {
         this.initGUI();
-
-        //Comment this out if you don't want default values
+        setServerStatus(NOT_RUNNING);
         this.initValues();
+    }
+
+    private void setServerStatus(String state, String message) {
+        /*
+        Sets the Displayed Status of the Server with a message
+         */
+        System.out.println(state + " | " + message);
+        this.ServerStatusMessage.setText(message);
+        setServerStatus(state);
+    }
+
+    private void setServerStatusMessage(String message) {
+        /*
+        Sets just the message
+         */
+        System.out.println(message);
+        this.ServerStatusMessage.setText(message);
+    }
+
+    private void setServerStatus(String state) {
+        /*
+        Sets the Displayed Status of the Server with no message
+         */
+        this.ServerStatus.setText(state);
+
+        if (state.equals(FAILED)) {
+            stopServer();
+            ServerControl.setSelected(false);
+            ServerControl.setText("Start");
+        }
+    }
+
+    private void startServer() {
+        /*
+        starts the server by initiating the thread.
+         */
+        System.out.println("Starting Server");
+        activeThread = new TransferThread(this);
+        activeThread.start();
+    }
+
+    private void stopServer() {
+        /*
+        Checks if Active thread is running, if so, kill it
+        Also resets the button back to default state
+         */
+        System.out.println("Stopping Server");
+        try {
+            activeThread.send.close();
+            activeThread.interrupt();
+        } catch (Exception e) {
+            System.out.println("Couldnt Stop?");
+        }
+        setServerStatus(NOT_RUNNING);
+
     }
 
     /* a getter for the fields that returns default if not set*/
@@ -70,6 +130,10 @@ public class Sender extends JFrame {
     }
 
     private InetAddress getIPAddress() {
+        /*
+        Fetches IP Address from Client.
+        Gives the default localhost if none provided
+         */
         if (!(this.IPAddress.getText().isEmpty())) {
             try {
                 return InetAddress.getByName(this.IPAddress.getText());
@@ -81,7 +145,7 @@ public class Sender extends JFrame {
         try {
             return InetAddress.getLocalHost();
         } catch (UnknownHostException e) {
-            System.out.println("Cant get localhost, something is broken");
+            setServerStatus(FAILED, e.toString());
         }
         return null;
     }
@@ -118,6 +182,14 @@ public class Sender extends JFrame {
         return joinedArray;
     }
 
+    private String getFileName() {
+        if (!(this.FileName.getText().isEmpty())) {
+            return this.FileName.getText();
+        } else {
+            setServerStatus(ERROR, "No Filename Provided");
+            return "FAILED";
+        }
+    }
 
     private static class TransferThread extends Thread {
         /*
@@ -131,6 +203,8 @@ public class Sender extends JFrame {
         int avail, prev_avail, packet;
         int receiverPort, senderPort, timeout;
         long start, finish;
+        int failCount;
+        int last_retransmit_sequence = -1;
 
         private TransferThread(Sender s) {
             /*
@@ -149,26 +223,24 @@ public class Sender extends JFrame {
             Starts Thread and opens socket for sending
              */
             try {
-                System.out.println("Initializing Transfer thread");
                 this.send = new DatagramSocket(this.senderPort);
-                System.out.println("Transfer Thread Initialized on Port: " + senderPort);
+                this.sender.setServerStatus(RUNNING, "Server Running on Port: " + senderPort);
             } catch (SocketException e) {
                 System.out.println("Socket Exception: " + e.toString());
+                this.sender.setServerStatus(FAILED, e.toString());
             }
-
         }
 
         private void transferFile() {
             /*
             This method initiates the transfer of the file
              */
-            System.out.println("Transferring File");
             try {
-
                 // Fetches Max Datagram Size to instantiate buffer
                 this.buf = new byte[this.sender.getValue(this.sender.MaxDataGramSize)];
 
-                this.fis = new FileInputStream(this.sender.FileName.getText());
+                String filename = this.sender.getFileName();
+                this.fis = new FileInputStream(filename);
 
                 // Create handshake to send to server and get echo response
                 String connectString = "<transmission MDS=" + this.sender.getValue(this.sender.MaxDataGramSize) + ">";
@@ -194,9 +266,9 @@ public class Sender extends JFrame {
 
 
             } catch (FileNotFoundException e) {
-                System.out.println("File not Found: " + e.toString());
+                this.sender.setServerStatus(ERROR, "File not Found: " + e.toString());
             } catch (IOException e) {
-                System.out.println("IO Exception: " + e.toString());
+                this.sender.setServerStatus(ERROR, "IO Exception: " + e.toString());
             }
         }
 
@@ -241,10 +313,10 @@ public class Sender extends JFrame {
                 }
 
             } catch (SocketException e) {
-                System.out.println("Socket Exception?: " + e.toString());
                 endTransmission();
+                this.sender.setServerStatus(ERROR, "Socket Exception?: " + e.toString());
             } catch (IOException e) {
-                System.out.println("IO Exception in Transmit: " + e.toString());
+                this.sender.setServerStatusMessage("IO Exception in Transmit: " + e.toString());
                 endTransmission();
             } catch (EOFTransmission eof) {
                 endTransmission();
@@ -291,6 +363,16 @@ public class Sender extends JFrame {
             /*
             When a transfer timed out, retransmit that chunk from the given sequence.
              */
+            if (this.last_retransmit_sequence != -1) {
+                if (i == this.last_retransmit_sequence) {
+                    this.failCount++;
+
+                    if (this.failCount >= MAX_FAIL_COUNT) {
+                        endTransmission();
+                        this.sender.setServerStatus(ERROR, "Receiver Error, check receiver for Details");
+                    }
+                }
+            }
             byte[] tmpbuf = new byte[this.sender.getValue(this.sender.MaxDataGramSize)];
             try {
                 // Since the file input stream reads the file in a forward motion
@@ -314,10 +396,11 @@ public class Sender extends JFrame {
                     System.out.println("Retransmitted chunk");
                 }
             } catch (FileNotFoundException e) {
-                System.out.println("File not found exception: " + e.toString());
+                this.sender.setServerStatus(ERROR, "File not found exception: " + e.toString());
             } catch (IOException e) {
-                System.out.println("IO Exception: " + e.toString());
+                this.sender.setServerStatus(ERROR, "IO Exception: " + e.toString());
             }
+
 
         }
 
@@ -358,7 +441,7 @@ public class Sender extends JFrame {
                 this.finish = System.currentTimeMillis();
                 this.sender.setTotalTime((finish - start));
             } catch (IOException e) {
-                System.out.println("End Transmission IO Exception: " + e.toString());
+                this.sender.setServerStatus(ERROR, "IO Exception: " + e.toString());
             }
         }
 
@@ -398,7 +481,11 @@ public class Sender extends JFrame {
 
 
     private void transfer() {
-        activeThread.transferFile();
+        try {
+            activeThread.transferFile();
+        } catch (Exception e) {
+            setServerStatus(ERROR, "Transfer error" + e.toString());
+        }
     }
 
     /**
@@ -409,6 +496,9 @@ public class Sender extends JFrame {
         this.TotalTransmissionTime = new JTextField();
         this.IPAddress = new JTextField();
         this.FileName = new JTextField();
+        ServerStatus = new JLabel();
+        ServerStatusMessage = new JLabel();
+        ServerControl = new JToggleButton("Start");
         JButton btnTransfer;
 
         JPanel contentPane = new JPanel();
@@ -463,15 +553,54 @@ public class Sender extends JFrame {
         btnTransfer.setFont(new Font("Tahoma", Font.BOLD, 21));
         addItem(contentPane, btnTransfer, 2, 4, 1, 1, GridBagConstraints.WEST);
 
+        addItem(contentPane, ServerControl, 1, 4, 1, 1, GridBagConstraints.WEST);
+
+        addItem(contentPane, ServerStatus, 0, 5, 1, 1, GridBagConstraints.WEST);
+        addItem(contentPane, ServerStatusMessage, 1, 5, 3, 1, GridBagConstraints.WEST);
+
+        setMinimumSize(IPAddress);
+        setMinimumSize(ReceiverPort);
+        setMinimumSize(SenderPort);
+        setMinimumSize(MaxDataGramSize);
+        setMinimumSize(Timeout);
+        setMinimumSize(FileName);
+        setMinimumSize(TotalTransmissionTime);
+
+
         btnTransfer.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 transfer();
             }
         });
+
+        ServerControl.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                JToggleButton serverAction = (JToggleButton) e.getSource();
+                if (serverAction.isSelected()) {
+                    serverAction.setText("Stop");
+                    startServer();
+                } else {
+                    serverAction.setText("Start");
+                    stopServer();
+                }
+            }
+        });
+
         this.add(contentPane);
         this.pack();
         this.setVisible(true);
+    }
+
+    private static void setMinimumSize(final Component c) {
+        /*
+        Avoid everything breaking if a value changes
+        gotta love java
+         */
+        c.setMinimumSize(new Dimension(c
+                .getPreferredSize().width - 1,
+                c.getPreferredSize().height));
     }
 
     private void initValues() {
@@ -487,8 +616,9 @@ public class Sender extends JFrame {
         SenderPort.setText(Integer.toString(this.getValue(this.SenderPort)));
         MaxDataGramSize.setText(Integer.toString(this.getValue(this.MaxDataGramSize)));
         Timeout.setText(Integer.toString(this.getValue(this.Timeout)));
-        FileName.setText("file.txt");
+        //FileName.setText("file.txt");
     }
 
 
 }
+
