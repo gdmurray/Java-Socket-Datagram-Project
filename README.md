@@ -1,4 +1,4 @@
-## CP372 Assignment 2
+## Networks Assignment 2
 
 #### Handshake Model
 
