@@ -1,4 +1,4 @@
-## Networks Assignment 2
+## DataGram Socket Diagram
 
 #### Handshake Model
 
